@@ -61,27 +61,33 @@ Resource allocation uses a *credits* system: different services and VM sizes dra
 
 With the group project in place, order a VM through the **Virtual Machines** service. The EOSC EU Node offers several flavours: for a shared JupyterHub, the **Medium** tier (16 vCPUs, 64 GB RAM) at 40 credits per day is a reasonable starting point. Over the 90-day maximum period that comes to 3,600 credits, well within a group allocation.
 
+Note that at this stage, we are just reserving the resources that will be consumed by our deployment in OpenStack. This process doesn't spin up anything, it just says to the system: "we would like to use this amount of CPU and RAM, please". Setting up the environment is a separate configuration step.
+
 ![Ordering a Medium VM: 40 credits/day, 90-day maximum period](img/eosc/06-vm-order.png)
 
-Once the order was submitted, resource allocation took only a couple of minutes. The environment appeared as **Active** in the portal, and clicking **View Externally** opened the OpenStack Horizon dashboard for our project, managed by PSNC (the Poznań Supercomputing and Networking Center).
+Once the order was submitted, resource allocation took less than a minute. The environment appeared as **Active** in the portal, and clicking **View Externally** opened the OpenStack Horizon dashboard for our project, managed by PSNC (the Poznań Supercomputing and Networking Center).
 
 ![The allocated Medium VM environment, 16 vCPUs and 64 GB RAM, showing Active status](img/eosc/07-vm-allocated.png)
 
+Note the expiry here: before 2026-08-19, if we are still using this resource, we will need to renew our limit allocation through the EU Node interface. If we forget to do so, our instance will be torn down, and my expectation would be that all data will be lost. I therefore took the opportunity to communicate in writing to my collaborators on the project not to leave any data *only* in the VM, and to always download a local backup after concluding their work. I'll remind them again closer to expiry time, but a stretch-goal would be to set up some form of automated backup task, perhaps using the EOSC EU Node Files service! That's left as an exercise for the reader (and future work for us).
+
 ![OpenStack Horizon resource overview for the project](img/eosc/08-horizon-overview.png)
+
+Now we have access to the dashboard, we can begin to set up our VM resources within our allocated resource limit.
 
 ## Navigating the network
 
 This is where things got interesting. In OpenStack, the most natural expectation would be to attach a public network directly to an instance — but PSNC's external network, `PSNC-EXT-PUB1-EDU`, is a *gateway* network. Instances cannot be attached to it directly; instead, it must be used as the upstream gateway of a router, which connects to a private tenant network. Public access is then handled via *floating IPs*, which are drawn from the external pool and associated with specific instance ports.
 
-This is a common enough pattern in OpenStack deployments, but it adds several setup steps that aren't obvious from the Horizon interface alone.
+This is a common enough pattern in OpenStack deployments, but it adds several setup steps that aren't obvious from the Horizon interface alone: hence the write-up here!
 
-### Private network and subnet
+### Step 1: Private network and subnet
 
 Create a private network with a subnet: we used `10.10.40.0/24`. Enable DHCP, and set DNS resolvers at the subnet level; Cloudflare's public resolvers (`1.1.1.1` / `1.0.0.1`) work well here.
 
 ![Creating the subnet with address range 10.10.40.0/24](img/eosc/12-subnet-create.png)
 
-### Router
+### Step 2: Router
 
 Create a router with `PSNC-EXT-PUB1-EDU` as its external gateway, then attach the private subnet as an internal interface. This gives instances on the `10.10.40.0/24` network a route to the internet via the PSNC gateway.
 
@@ -122,7 +128,7 @@ Non-authoritative answer:
 x.x.x.62.in-addr.arpa  name = hostname-xxx.man.poznan.pl
 ```
 
-Create a security group with ingress rules for the ports you need:
+Create a security group with ingress rules for the ports you need, for example:
 
 | Protocol | Port | Purpose |
 |----------|------|---------|
@@ -140,9 +146,25 @@ With the floating IP associated and the security group attached, the first SSH c
 
 ![Ubuntu 24.04 login banner after successful SSH connection](img/eosc/19-ssh-login.png)
 
+## Automating VM provisioning with Mistral
+
+Having gone through the networking and launch steps manually once, we wrote a [Mistral](https://docs.openstack.org/mistral/latest/) workflow to automate them for future deployments. Mistral is OpenStack's native workflow service: it lets you describe a sequence of API calls as a YAML document and execute them as a single operation.
+
+Our workflow, `provision_vm.yaml`, covers the full sequence from network creation to floating IP association:
+
+1. **Resolve resource IDs** from human-readable names (image, flavour, external network)
+2. **Create the private network and subnet**, with DHCP enabled and DNS resolvers configured
+3. **Create the router** with `PSNC-EXT-PUB1-EDU` as the external gateway, and attach the subnet as an internal interface
+4. **Launch the instance** on the private network, then poll until it reaches `ACTIVE` status
+5. **Allocate a floating IP** from the external pool and associate it with the instance's port
+
+All inputs (instance name, image, flavour, network CIDR, keypair name) are parameterised, so the same workflow can provision a different project's VM by changing a handful of values. The one thing it does not handle is the security group, which is a one-time configuration that persists across rebuilds and can be straightforwardly done through Horizon.
+
+The workflow outputs the instance ID, private IP, and floating IP, which can then be fed directly into the Ansible inventory.
+
 ## Automating the deployment with Ansible
 
-Getting a VM running is the beginning, not the end. The harder question is: what happens when the instance needs to be rebuilt, when a colleague needs to reproduce the environment, or when we want to apply the same setup to a different project? Clicking through Horizon is fine once; doing it repeatedly, reliably, and without forgetting steps is a different matter.
+Getting a VM running is the beginning, not the end. The next question is: what happens when the instance needs to be rebuilt, when a colleague needs to reproduce the environment, or when we want to apply the same setup to a different project? Clicking through Horizon is fine once; doing it repeatedly, reliably, and without forgetting steps is a different matter.
 
 For this reason we wrote an Ansible playbook to codify the entire server configuration. Ansible is an automation tool that describes the desired state of a system as YAML and applies that state idempotently: running it twice leaves the server in the same condition as running it once. The playbook is organised into *roles*, each responsible for one logical concern.
 
