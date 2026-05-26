@@ -21,31 +21,43 @@ Shared computational infrastructure matters. When a research team needs a common
 
 This post describes how we set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
 
-EOSC EU Node also provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions without any server to configure. For a single researcher exploring data occasionally, that may be the right choice. For a team, the economics shift quickly. A Medium notebook session (4 vCPUs, 8 GB RAM) costs 0.5 credits per hour; a single user running it continuously for the 90-day credit window would spend 1,080 credits: a third of the 3,000-credit [individual investigator allocation](https://open-science-cloud.ec.europa.eu/about/access-policy). A group project can receive up to 6,000 credits. Our Medium VM costs 3,600 of those for the full 90 days, but provides 16 vCPUs and 64 GB RAM shared across every member of the team simultaneously, with persistent storage and a fully customisable software environment. For collaborative research, self-hosting wins on both resources and cost.
+EOSC EU Node also provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions without any server to configure. For a single researcher exploring data occasionally, that could be the right choice. For a team, the economics shift quickly. A Medium notebook session (4 vCPUs, 8 GB RAM) costs 0.5 credits per hour; a single user running it continuously for the 90-day credit window would spend 1,080 credits: a third of the 3,000-credit [individual investigator allocation](https://open-science-cloud.ec.europa.eu/about/access-policy). A group project can receive up to 6,000 credits. Our Medium VM costs 3,600 of those for the full 90 days, but provides over 4x the resources: 16 vCPUs and 64 GB RAM shared across every member of the team simultaneously, with 100 GB persistent storage and a fully customisable software environment. For collaborative research, self-hosting delivers more compute per credit: resources are shared across the whole team rather than burned on a single session.
 
-## The EOSC EU Node
+## Getting Started with VMs on the EOSC EU Node
 
-The EOSC EU Node is a cloud platform operated by the European Commission, providing virtual machines, storage, interactive notebooks, and other services to researchers affiliated with European institutions. Access is via [MyAccessID](https://myaccessid.eu/), a federated identity system that accepts institutional logins (in our case, Durham University credentials) via eduGAIN.
+The EOSC EU Node is a cloud platform operated by the European Commission, providing virtual machines, storage, interactive notebooks, and other services to researchers affiliated with European institutions. Access is via [MyAccessID](https://myaccessid.eu/), a federated identity system that accepts institutional logins via eduGAIN.
+
+### Before you start
+
+To follow this walkthrough you will need:
+
+- An **EOSC EU Node account**: log in at [open-science-cloud.ec.europa.eu](https://open-science-cloud.ec.europa.eu/) using [MyAccessID](https://myaccessid.eu/) with your institutional credentials. If your institution is connected to the GÉANT/eduGAIN federation, no separate registration is needed.
+- A **group project** in the EOSC portal, with a VM credits allocation. Individual accounts receive 3,000 credits; group projects can receive up to 6,000.
+- An **SSH key pair**. You will import the public key into OpenStack Horizon when launching your VM.
+
+No prior OpenStack experience is required, though familiarity with the command line is assumed for the Ansible sections later in the post.
+
+### Logging in
 
 ![The EOSC EU Node login page](img/eosc-01-login.png)
 
-Logging in via MyAccessID is seamless if your institution is connected to the GÉANT federation. Durham's login redirected through the standard Shibboleth flow and landed us in the EOSC dashboard within seconds.
+Logging in via MyAccessID is seamless if your institution is connected to the GÉANT federation: the standard Shibboleth flow redirects you to the EOSC dashboard within seconds.
 
 ![Logging in via MyAccessID with Durham University credentials](img/eosc-02-myaccessid.png)
 
 ![The EOSC EU Node dashboard after login](img/eosc-03-dashboard.png)
 
-Resources on the EOSC EU Node are managed through *group projects*. A default personal project exists for every user, but to share resources (and the credits that fund them) with colleagues, you create a group project. We created a group project for this work, which also allows collaborators to be invited to the shared environment.
+Resources on the EOSC EU Node are managed through *group projects*. A default personal project exists for every user, but to share resources (and the credits that fund them) with colleagues, create a group project. This also allows collaborators to be invited to the shared environment.
 
 ![A group project created in the EOSC portal](img/eosc-04-group-created.png)
 
-Resource allocation on the EOSC EU Node uses a *credits* system: different services and VM sizes draw credits at different rates per day. Our group project was allocated 6,000 credits in total, refreshed over a 90-day window.
+Resource allocation uses a *credits* system: different services and VM sizes draw credits at different rates per day. Group projects are allocated up to 6,000 credits, refreshed over a 90-day window.
 
 ![Credits remaining display: 6000 of 6000, 90 days until next refresh](img/eosc-05-credits.png)
 
 ## Allocating a virtual machine
 
-With the group project in place, we ordered a VM through the **Virtual Machines** service. The EOSC EU Node offers several flavours; we selected the **Medium** tier (16 vCPUs, 64 GB RAM), which costs 40 credits per day. Over the 90-day maximum period that comes to 3,600 credits, well within our allocation.
+With the group project in place, order a VM through the **Virtual Machines** service. The EOSC EU Node offers several flavours: for a shared JupyterHub, the **Medium** tier (16 vCPUs, 64 GB RAM) at 40 credits per day is a reasonable starting point. Over the 90-day maximum period that comes to 3,600 credits, well within a group allocation.
 
 ![Ordering a Medium VM: 40 credits/day, 90-day maximum period](img/eosc-06-vm-order.png)
 
@@ -63,7 +75,7 @@ This is a common enough pattern in OpenStack deployments, but it adds several se
 
 ### Private network and subnet
 
-We created a private network with a subnet on the `10.10.40.0/24` range. DHCP was enabled, with Cloudflare's public DNS resolvers (`1.1.1.1` / `1.0.0.1`) configured at the subnet level.
+Create a private network with a subnet: we used `10.10.40.0/24`. Enable DHCP, and set DNS resolvers at the subnet level; Cloudflare's public resolvers (`1.1.1.1` / `1.0.0.1`) work well here.
 
 ![Creating the subnet with address range 10.10.40.0/24](img/eosc-12-subnet-create.png)
 
@@ -71,18 +83,18 @@ We created a private network with a subnet on the `10.10.40.0/24` range. DHCP wa
 
 ### Router
 
-A router was created with `PSNC-EXT-PUB1-EDU` as its external gateway, then the private subnet was attached to it as an internal interface. This gives instances on the `10.10.40.0/24` network a route to the internet via the PSNC gateway.
+Create a router with `PSNC-EXT-PUB1-EDU` as its external gateway, then attach the private subnet as an internal interface. This gives instances on the `10.10.40.0/24` network a route to the internet via the PSNC gateway.
 
 ![The router with its internal interface at 10.10.40.1](img/eosc-14-router-interface.png)
 
 ## Launching the instance
 
-With the network in place, we launched an instance named **Metagenome-JH** with the following configuration:
+With the network in place, launch an instance with the following configuration (we named ours **Metagenome-JH**):
 
 - **Image:** `ubuntu-24.04` (the standard Ubuntu 24.04 LTS cloud image)
-- **Flavour:** `C1-NVME-16vCPU-64R-100D` — 16 vCPUs, 64 GB RAM, 100 GB NVMe root disk
-- **Network:** our private tenant network
-- **Key pair:** an existing SSH public key imported via the Horizon interface
+- **Flavour:** `C1-NVME-16vCPU-64R-100D` (16 vCPUs, 64 GB RAM, 100 GB NVMe root disk)
+- **Network:** your private tenant network
+- **Key pair:** your SSH public key, imported via the Horizon interface
 
 ![Launch Instance dialog, Details tab: instance name and description](img/eosc-09-launch-details.png)
 
@@ -96,7 +108,7 @@ Within a minute the instance appeared in the instances list with status **Active
 
 ## Floating IP and security groups
 
-The instance was assigned a private IP (`10.10.40.159`) on our tenant network. To reach it from the internet, we allocated a floating IP from the `PSNC-EXT-PUB1-EDU` pool (the project quota allows one) and associated it with the instance.
+The instance gets a private IP on your tenant network. To reach it from the internet, allocate a floating IP from the `PSNC-EXT-PUB1-EDU` pool (the project quota allows one) and associate it with the instance.
 
 ![Allocate Floating IP dialog, selecting from the PSNC-EXT-PUB1-EDU pool](img/eosc-16-floating-ip-allocate.png)
 
@@ -110,7 +122,7 @@ Non-authoritative answer:
 x.x.x.62.in-addr.arpa  name = hostname-xxx.man.poznan.pl
 ```
 
-We also created a security group with ingress rules for the ports we needed:
+Create a security group with ingress rules for the ports you need:
 
 | Protocol | Port | Purpose |
 |----------|------|---------|
