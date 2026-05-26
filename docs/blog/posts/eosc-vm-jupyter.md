@@ -41,33 +41,33 @@ No prior OpenStack experience is required, though familiarity with the command l
 
 ### Logging in
 
-![The EOSC EU Node login page](img/eosc-01-login.png)
+![The EOSC EU Node login page](img/eosc/01-login.png)
 
 Logging in via MyAccessID is seamless if your institution is connected to the GÉANT federation: the standard Shibboleth flow redirects you to the EOSC dashboard within seconds.
 
-![Logging in via MyAccessID with Durham University credentials](img/eosc-02-myaccessid.png)
+![Logging in via MyAccessID with Durham University credentials](img/eosc/02-myaccessid.png)
 
-![The EOSC EU Node dashboard after login](img/eosc-03-dashboard.png)
+![The EOSC EU Node dashboard after login](img/eosc/03-dashboard.png)
 
 Resources on the EOSC EU Node are managed through *group projects*. A default personal project exists for every user, but to share resources (and the credits that fund them) with colleagues, create a group project. This also allows collaborators to be invited to the shared environment.
 
-![A group project created in the EOSC portal](img/eosc-04-group-created.png)
+![A group project created in the EOSC portal](img/eosc/04-group-created.png)
 
 Resource allocation uses a *credits* system: different services and VM sizes draw credits at different rates per day. Group projects are allocated up to 6,000 credits, refreshed over a 90-day window.
 
-![Credits remaining display: 6000 of 6000, 90 days until next refresh](img/eosc-05-credits.png)
+![Credits remaining display: 6000 of 6000, 90 days until next refresh](img/eosc/05-credits.png)
 
 ## Allocating a virtual machine
 
 With the group project in place, order a VM through the **Virtual Machines** service. The EOSC EU Node offers several flavours: for a shared JupyterHub, the **Medium** tier (16 vCPUs, 64 GB RAM) at 40 credits per day is a reasonable starting point. Over the 90-day maximum period that comes to 3,600 credits, well within a group allocation.
 
-![Ordering a Medium VM: 40 credits/day, 90-day maximum period](img/eosc-06-vm-order.png)
+![Ordering a Medium VM: 40 credits/day, 90-day maximum period](img/eosc/06-vm-order.png)
 
 Once the order was submitted, resource allocation took only a couple of minutes. The environment appeared as **Active** in the portal, and clicking **View Externally** opened the OpenStack Horizon dashboard for our project, managed by PSNC (the Poznań Supercomputing and Networking Center).
 
-![The allocated Medium VM environment, 16 vCPUs and 64 GB RAM, showing Active status](img/eosc-07-vm-allocated.png)
+![The allocated Medium VM environment, 16 vCPUs and 64 GB RAM, showing Active status](img/eosc/07-vm-allocated.png)
 
-![OpenStack Horizon resource overview for the project](img/eosc-08-horizon-overview.png)
+![OpenStack Horizon resource overview for the project](img/eosc/08-horizon-overview.png)
 
 ## Navigating the network
 
@@ -79,15 +79,13 @@ This is a common enough pattern in OpenStack deployments, but it adds several se
 
 Create a private network with a subnet: we used `10.10.40.0/24`. Enable DHCP, and set DNS resolvers at the subnet level; Cloudflare's public resolvers (`1.1.1.1` / `1.0.0.1`) work well here.
 
-![Creating the subnet with address range 10.10.40.0/24](img/eosc-12-subnet-create.png)
-
-![Success notification: private network created](img/eosc-13-network-created.png)
+![Creating the subnet with address range 10.10.40.0/24](img/eosc/12-subnet-create.png)
 
 ### Router
 
 Create a router with `PSNC-EXT-PUB1-EDU` as its external gateway, then attach the private subnet as an internal interface. This gives instances on the `10.10.40.0/24` network a route to the internet via the PSNC gateway.
 
-![The router with its internal interface at 10.10.40.1](img/eosc-14-router-interface.png)
+![The router with its internal interface at 10.10.40.1](img/eosc/13-router-interface.png)
 
 ## Launching the instance
 
@@ -98,23 +96,23 @@ With the network in place, launch an instance with the following configuration (
 - **Network:** your private tenant network
 - **Key pair:** your SSH public key, imported via the Horizon interface
 
-![Launch Instance dialog, Details tab: instance name and description](img/eosc-09-launch-details.png)
+![Launch Instance dialog, Details tab: instance name and description](img/eosc/09-launch-details.png)
 
-![Launch Instance Source tab: ubuntu-24.04 selected, no new volume](img/eosc-10-launch-source.png)
+![Launch Instance Source tab: ubuntu-24.04 selected, no new volume](img/eosc/10-launch-source.png)
 
-![Launch Instance Flavour tab: C1-NVME-16vCPU-64R-100D selected](img/eosc-11-launch-flavour.png)
+![Launch Instance Flavour tab: C1-NVME-16vCPU-64R-100D selected](img/eosc/11-launch-flavour.png)
 
 Within a minute the instance appeared in the instances list with status **Active** and power state **Running**.
 
-![Instances list showing the VM running on ubuntu-24.04, status Active](img/eosc-15-instance-running.png)
+![Instances list showing the VM running on ubuntu-24.04, status Active](img/eosc/14-instance-running.png)
 
 ## Floating IP and security groups
 
 The instance gets a private IP on your tenant network. To reach it from the internet, allocate a floating IP from the `PSNC-EXT-PUB1-EDU` pool (the project quota allows one) and associate it with the instance.
 
-![Allocate Floating IP dialog, selecting from the PSNC-EXT-PUB1-EDU pool](img/eosc-16-floating-ip-allocate.png)
+![Allocate Floating IP dialog, selecting from the PSNC-EXT-PUB1-EDU pool](img/eosc/15-floating-ip-allocate.png)
 
-![Associating a floating IP with the instance](img/eosc-17-floating-ip-associate.png)
+![Associating a floating IP with the instance](img/eosc/16-floating-ip-associate.png)
 
 PSNC automatically assigns reverse DNS entries for floating IPs in their pool. A quick `nslookup` confirmed that `62.x.x.x` resolved to `hostname-xxx.man.poznan.pl`, a hostname we could use directly for the Let's Encrypt certificate without needing to configure any external DNS ourselves.
 
@@ -134,13 +132,13 @@ Create a security group with ingress rules for the ports you need:
 | TCP | 8000 | Direct JupyterHub access during testing |
 | ICMP | — | Ping / diagnostics |
 
-![The security group showing all ingress rules](img/eosc-19-security-groups.png)
+![The security group showing all ingress rules](img/eosc/18-security-groups.png)
 
 With the floating IP associated and the security group attached, the first SSH connection confirmed the instance was reachable:
 
-![Terminal showing the ssh command to connect to the instance](img/eosc-18-ssh-connect.png)
+![Terminal showing the ssh command to connect to the instance](img/eosc/17-ssh-connect.png)
 
-![Ubuntu 24.04 login banner after successful SSH connection](img/eosc-20-ssh-login.png)
+![Ubuntu 24.04 login banner after successful SSH connection](img/eosc/19-ssh-login.png)
 
 ## Automating the deployment with Ansible
 
