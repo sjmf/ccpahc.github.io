@@ -19,7 +19,7 @@ Shared computational infrastructure matters. When a research team needs a common
 
 [JupyterHub](https://jupyter.org/hub) has become a standard piece of infrastructure in data-intensive research across many disciplines, and its value for arts and humanities work is no different. Whether a team is running natural language processing pipelines over a historical corpus, performing geospatial analysis on archaeological survey data, building interactive visualisations of archival collections, or collaborating on quantitative analysis of cultural datasets, a shared JupyterHub removes one of the most persistent friction points in collaborative computational work: the "it works on my machine" problem. A team member in a different city, on a different operating system, with a different version of Python, can open the same notebook and produce the same result.
 
-This post describes how myself and my colleague Emily set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine (VM) through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
+This post describes how my colleague Emily and I set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine (VM) through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
 
 The EOSC EU Node provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions, without any server to configure. For a single researcher exploring data, that is likely the right choice. For a team with more demanding computations to run, however, the economics shift quickly towards the use of a dedicated virtual machine.
 
@@ -73,7 +73,7 @@ Note the expiry here: if we are still using this resource, we will need to renew
 
 ![OpenStack Horizon resource overview for the project](img/eosc/08-horizon-overview.png)
 
-Now we have access to the dashboard we can begin to set up our VM resources within our allocated resource limit.
+Now that we have access to the dashboard, we can begin to set up our VM resources within our allocated resource limit.
 
 ## Navigating the network
 
@@ -171,7 +171,7 @@ For this reason I wrote an Ansible playbook to codify the entire server configur
 There were a few design considerations for the service I want to run inside the VM. I wanted my Jupyter server to:
 
  * Run in Docker for isolation
- * Sit behind a reverse proxy, with nginx terminating connections
+ * Sit behind a reverse proxy, with nginx terminating connections from the web
  * Use Let's Encrypt for automated provision of TLS certificates (http**s**)
 
 Running JupyterHub and its per-user notebook containers in Docker keeps each user's environment isolated from the host OS and each other, and makes the entire deployment declarative: a `docker-compose.yml` and a small `Dockerfile` describe exactly what runs, and rebuilding from scratch is a single command.
@@ -216,4 +216,4 @@ From a CCP-AHC perspective, this is a practical demonstration of the kind of inf
 
 ---
 
-*The EOSC EU Node is operated by the European Commission. Virtual machine resources at PSNC were accessed via the EOSC EU Node Virtual Machines service. This research was supported by an EPSRC Impact Acceleration Account (IAA) award from Durham University to the **AI Workflows for Permeable Noise-cancelling Metamaterials** project*
+*The EOSC EU Node is operated by the European Commission. Virtual machine resources at PSNC were accessed via the EOSC EU Node Virtual Machines service. This research was supported by an EPSRC Impact Acceleration Account (IAA) award from Durham University to the **AI Workflows for Permeable Noise-cancelling Metamaterials** project.*
