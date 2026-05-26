@@ -21,7 +21,7 @@ Shared computational infrastructure matters. When a research team needs a common
 
 This post describes how we set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine (VM) through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
 
-EOSC EU Node provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions, without any server to configure. For a single researcher exploring data, that is likely the right choice. For a team with more demanding computations to run, however, the economics shift quickly towards the use of a dedicated virtual machine. 
+The EOSC EU Node provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions, without any server to configure. For a single researcher exploring data, that is likely the right choice. For a team with more demanding computations to run, however, the economics shift quickly towards the use of a dedicated virtual machine.
 
 A Medium notebook session (4 vCPUs, 8 GB RAM) costs 0.5 credits per hour; a single user running it continuously for the 90-day credit window would spend 1,080 credits: half of the 2,000-credit [individual investigator allocation](https://open-science-cloud.ec.europa.eu/about/access-policy). A group project can receive up to 6,000 credits. A Medium VM costs 3,600 credits for the full 90 days, but provides 4x the CPU resources and 8x the memory: 16 vCPUs and 64 GB RAM shared across every member of the team simultaneously, with 100 GB persistent storage and a fully customisable software environment. For collaborative research, self-hosting delivers more compute per credit: resources are shared across the whole team rather than burned on a single session.
 
@@ -34,7 +34,7 @@ The EOSC EU Node is a cloud platform operated by the European Commission, provid
 To follow this walkthrough you will need:
 
 - An **EOSC EU Node account**: log in at [open-science-cloud.ec.europa.eu](https://open-science-cloud.ec.europa.eu/) using [MyAccessID](https://myaccessid.eu/) with your institutional credentials. If your institution is connected to the GÉANT/eduGAIN federation, no separate registration is needed.
-- A **group project** in the EOSC portal, with a VM credits allocation. Individual accounts receive 3,000 credits; group projects can receive up to 6,000, but investigator access is required to access this: if you think you are entitled to investigator access (for example, as an academic or an RSE) and don't see this in the portal, then your institutional IT team will be able to help.
+- A **group project** in the EOSC portal, with a VM credits allocation. Individual accounts receive 2,000 credits; group projects can receive up to 6,000, but investigator access is required to access this: if you think you are entitled to investigator access (for example, as an academic or an RSE) and don't see this in the portal, then your institutional IT team will be able to help.
 - An **SSH key pair**. You will import your public key into OpenStack Horizon when launching your VM.
 
 No prior OpenStack experience is required, though familiarity with the command line is assumed for the Ansible sections later in the post.
@@ -61,7 +61,7 @@ Resource allocation uses a *credits* system: different services and VM sizes dra
 
 With the group project in place, order a VM through the **Virtual Machines** service. The EOSC EU Node offers several flavours: for a shared JupyterHub, the **Medium** tier (16 vCPUs, 64 GB RAM) at 40 credits per day is a reasonable starting point. Over the 90-day maximum period that comes to 3,600 credits, well within a group allocation.
 
-Note that at this stage, we are just reserving the resources that will be consumed by our deployment in OpenStack. This process doesn't spin up anything, it just says to the system: "we would like to use this amount of CPU and RAM, please". Setting up the environment is a separate configuration step.
+At this stage, we are just reserving the resources that will be consumed by our deployment in OpenStack. This process doesn't spin up anything, it just says to the system: "we would like to reserve this amount of CPU and RAM, please". Setting up the environment is a separate configuration step.
 
 ![Ordering a Medium VM: 40 credits/day, 90-day maximum period](img/eosc/06-vm-order.png)
 
@@ -69,11 +69,11 @@ Once the order was submitted, resource allocation took less than a minute. The e
 
 ![The allocated Medium VM environment, 16 vCPUs and 64 GB RAM, showing Active status](img/eosc/07-vm-allocated.png)
 
-Note the expiry here: before 2026-08-19, if we are still using this resource, we will need to renew our limit allocation through the EU Node interface. If we forget to do so, our instance will be torn down, and my expectation would be that all data will be lost. I therefore took the opportunity to communicate in writing to my collaborators on the project not to leave any data *only* in the VM, and to always download a local backup after concluding their work. I'll remind them again closer to expiry time, but a stretch-goal would be to set up some form of automated backup task, perhaps using the EOSC EU Node Files service! That's left as an exercise for the reader (and future work for us).
+Note the expiry here: if we are still using this resource, we will need to renew our limit allocation through the EU Node interface by 2026-08-19. If we forget to do so, our instance will be torn down, and my expectation is that all data will be lost. I therefore took the opportunity to communicate in writing to my collaborators on the project not to leave any data *only* in the VM, and to always download a local backup after concluding their work. I'll remind them again closer to expiry time, but a stretch-goal would be to set up some form of automated backup task, perhaps using the EOSC EU Node Files service! That's left as an exercise for the reader (and future work for us).
 
 ![OpenStack Horizon resource overview for the project](img/eosc/08-horizon-overview.png)
 
-Now we have access to the dashboard, we can begin to set up our VM resources within our allocated resource limit.
+Now we have access to the dashboard we can begin to set up our VM resources within our allocated resource limit.
 
 ## Navigating the network
 
@@ -174,7 +174,7 @@ There were a few design considerations for the service I want to run inside the 
  * Sit behind a reverse proxy, with nginx terminating connections
  * Use Let's Encrypt for automated provision of TLS certificates (http**s**)
 
-Running JupyterHub and its per-user notebook containers in Docker keeps each user's environment isolated from the host OS and each other, and makes the entire deployment declarative: a `docker-compose.yml` and a small `Dockerfile` describe exactly what runs, and rebuilding from scratch is a single command. 
+Running JupyterHub and its per-user notebook containers in Docker keeps each user's environment isolated from the host OS and each other, and makes the entire deployment declarative: a `docker-compose.yml` and a small `Dockerfile` describe exactly what runs, and rebuilding from scratch is a single command.
 
 Next, rather than exposing JupyterHub directly on a public port, nginx sits in front of it as a reverse proxy, handling TLS termination and keeping the hub bound to `localhost:8000`. This reduces attack surface and follows established practice for production web services. TLS itself is handled by Let's Encrypt via certbot: PSNC automatically assigns a reverse-DNS hostname to each floating IP in their pool, so we had a valid domain name without needing to own or configure one ourselves, and the certificate renews automatically via a systemd timer. Users get a green lock in their browser, and a secure connection: the `s` in `https`.
 
@@ -200,7 +200,7 @@ The hub container is managed by Docker Compose. It binds to `127.0.0.1:8000` onl
 
 **The nginx/certbot config conflict.** When working with Ansible, it's worth keeping in mind the principle of *idempotency* mentioned above. Subsequent runs must produce the same result without re-running completed steps. The first version of the playbook used `certbot --nginx` to issue and configure our TLS certificate for use in nginx, but this caused problems: `certbot --nginx` modifies the nginx configuration file in place, but Ansible's template task overwrote those modifications on subsequent runs. This created a fight between certbot's in-place edits and Ansible's template deployments: every subsequent time the playbook ran, Ansible would restore the HTTP-only template, and since the certificate already existed, certbot's task was skipped, leaving port 443 and HTTPS inactive. Switching to `certbot certonly --webroot` and managing the complete nginx configuration (both the HTTP redirect and the HTTPS proxy blocks) as a single Ansible template resolved this permanently.
 
-**The NativeAuthenticator bootstrap problem.** Jupyter's NativeAuthenticator plugin provides sign-in functionality. I'd configured this with `open_signup = False`, which requires an administrator to approve accounts before users can log in. But the first administrator account has nobody to approve it! Signing up as `admin` and immediately trying to log in produced only "Invalid username or password", a misleading error that obscures the real issue: the account exists but is not yet authorised. The resolution is to add the admin username to `allowed_users` in the JupyterHub configuration, which grants that specific account immediate login rights after signup without requiring external approval.
+**The NativeAuthenticator bootstrap problem.** JupyterHub's NativeAuthenticator plugin provides sign-in functionality. I'd configured this with `open_signup = False`, which requires an administrator to approve accounts before users can log in. But the first administrator account has nobody to approve it! Signing up as `admin` and immediately trying to log in produced only "Invalid username or password", a misleading error that obscures the real issue: the account exists but is not yet authorised. The resolution is to add the admin username to `allowed_users` in the JupyterHub configuration, which grants that specific account immediate login rights after signup without requiring external approval.
 
 ### What reproducibility buys you
 
@@ -216,4 +216,4 @@ From a CCP-AHC perspective, this is a practical demonstration of the kind of inf
 
 ---
 
-*The EOSC EU Node is operated by the European Commission. Virtual machine resources at PSNC were accessed via the EOSC EU Node Virtual Machines service. This research was supported by an EPSRC Impact Acceleration Account (IAA) award from Durham University to the **AI Workflows For Permeable Noise-cancelling Metamaterials** project*
+*The EOSC EU Node is operated by the European Commission. Virtual machine resources at PSNC were accessed via the EOSC EU Node Virtual Machines service. This research was supported by an EPSRC Impact Acceleration Account (IAA) award from Durham University to the **AI Workflows for Permeable Noise-cancelling Metamaterials** project*
