@@ -19,7 +19,7 @@ Shared computational infrastructure matters. When a research team needs a common
 
 [JupyterHub](https://jupyter.org/hub) has become a standard piece of infrastructure in data-intensive research across many disciplines, and its value for arts and humanities work is no different. Whether a team is running natural language processing pipelines over a historical corpus, performing geospatial analysis on archaeological survey data, building interactive visualisations of archival collections, or collaborating on quantitative analysis of cultural datasets, a shared JupyterHub removes one of the most persistent friction points in collaborative computational work: the "it works on my machine" problem. A team member in a different city, on a different operating system, with a different version of Python, can open the same notebook and produce the same result.
 
-This post describes how we set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine (VM) through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
+This post describes how myself and my colleague Emily set up a JupyterHub instance for a research project using the [EOSC EU Node](https://open-science-cloud.ec.europa.eu/), the European Open Science Cloud's centrally-managed computational platform. It covers the steps involved in provisioning a virtual machine (VM) through the EOSC portal, the networking subtleties of the PSNC OpenStack environment where our resources were allocated, and the Ansible automation we wrote to make the deployment reproducible and maintainable: what we built today can be rebuilt tomorrow, or adapted for a different project, without starting from scratch.
 
 The EOSC EU Node provides [Interactive Notebooks](https://docs.psnc.pl/spaces/EOSCUserGuides/pages/180097241/Interactive+Notebooks) as a managed service: individual Jupyter sessions, without any server to configure. For a single researcher exploring data, that is likely the right choice. For a team with more demanding computations to run, however, the economics shift quickly towards the use of a dedicated virtual machine.
 
@@ -146,9 +146,9 @@ With the floating IP associated and the security group attached, the first SSH c
 
 ## Automating VM provisioning with Mistral
 
-Having gone through the networking and launch steps manually once, we wrote a [Mistral](https://docs.openstack.org/mistral/latest/) workflow to automate them for future deployments. Mistral is OpenStack's native workflow service: it lets you describe a sequence of API calls as a YAML document and execute them as a single operation.
+Having gone through the networking and launch steps manually once, I wrote a [Mistral](https://docs.openstack.org/mistral/latest/) workflow to automate them for future deployments. Mistral is OpenStack's native workflow service: it lets you describe a sequence of API calls as a YAML document and execute them as a single operation.
 
-Our workflow, `provision_vm.yaml`, covers the full sequence from network creation to floating IP association:
+The final workflow, `provision_vm.yaml`, covers the full sequence from network creation to floating IP association:
 
 1. **Resolve resource IDs** from human-readable names (image, flavour, external network)
 2. **Create the private network and subnet**, with DHCP enabled and DNS resolvers configured
@@ -164,7 +164,7 @@ The workflow outputs the instance ID, private IP, and floating IP, which can the
 
 Getting a VM running is the beginning, not the end. The next question is: what happens when the instance needs to be rebuilt, when a colleague needs to reproduce the environment, or when we want to apply the same setup to a different project? Clicking through Horizon is fine once; doing it repeatedly, reliably, and without forgetting steps is a different matter.
 
-For this reason we wrote an Ansible playbook to codify the entire server configuration. Ansible is an automation tool that describes the desired state of a system as YAML and applies that state idempotently: this means that running it twice leaves the server in the same condition as running it once, and importantly, it won't repeat time-consuming configuration steps if something fails and needs to be fixed further down the chain.
+For this reason I wrote an Ansible playbook to codify the entire server configuration. Ansible is an automation tool that describes the desired state of a system as YAML and applies that state idempotently: this means that running it twice leaves the server in the same condition as running it once, and importantly, it won't repeat time-consuming configuration steps if something fails and needs to be fixed further down the chain.
 
 ## Design considerations
 
@@ -188,7 +188,7 @@ The Ansible playbook is organised into *roles*, each responsible for one logical
 
 **`security`** does some basic server hardening: it installs and configures fail2ban with an aggressive SSH jail (three failed attempts within a minute earns a 60-minute ban) and hardens the SSH daemon by disabling root login and password authentication. Only key-based SSH access is permitted. The role validates the SSH daemon configuration with `sshd -T` before triggering a restart, so a misconfiguration fails loudly rather than silently locking us out.
 
-**`nginx`** installs nginx and certbot, then uses certbot's `--webroot` mode to obtain a Let's Encrypt TLS certificate for the server's domain name. We deliberately chose `certonly --webroot` over `certbot --nginx` for separation of concerns: certbot handles certificate issuance only; Ansible templates handle the full nginx configuration including the SSL server block. This produced clean, fully idempotent behaviour.
+**`nginx`** installs nginx and certbot, then uses certbot's `--webroot` mode to obtain a Let's Encrypt TLS certificate for the server's domain name. I chose `certbot certonly --webroot` over `certbot --nginx` (which additionally edits the certificate into the nginx configuration) for separation of concerns: certbot handles certificate issuance only; Ansible templates handle the full nginx configuration including the SSL server block. This produced clean, fully idempotent behaviour.
 
 **`jupyterhub`** is the heart of the deployment. JupyterHub runs in a Docker container built from a small `Dockerfile` that extends the official `quay.io/jupyterhub/jupyterhub` image with two key additions: [DockerSpawner](https://github.com/jupyterhub/dockerspawner), which lets the hub start and stop per-user containers, and [NativeAuthenticator](https://github.com/jupyterhub/nativeauthenticator), which manages user accounts and passwords locally without requiring an external identity provider.
 
