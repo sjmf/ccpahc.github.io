@@ -138,13 +138,11 @@ Create a security group with ingress rules for the ports you need, for example:
 | TCP | 8000 | Direct JupyterHub access during testing |
 | ICMP | — | Ping / diagnostics |
 
-![The security group showing all ingress rules](img/eosc/18-security-groups.png)
+![The security group showing all ingress rules](img/eosc/17-security-groups.png)
 
 With the floating IP associated and the security group attached, the first SSH connection confirmed the instance was reachable:
 
-![Terminal showing the ssh command to connect to the instance](img/eosc/17-ssh-connect.png)
-
-![Ubuntu 24.04 login banner after successful SSH connection](img/eosc/19-ssh-login.png)
+![Ubuntu 24.04 login banner after successful SSH connection](img/eosc/18-ssh-login.png)
 
 ## Automating VM provisioning with Mistral
 
